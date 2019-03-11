@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 /**
@@ -436,8 +437,17 @@ public class ProxyUtilTest {
             int x1 = beanProxy.count();
             int x2 = beanProxy.count();
             assertEquals(x1, x2);
-            Thread.sleep(150);
-            assertNotEquals(x2, beanProxy.count());
+            int i = 0;
+            while (true) { //auto refreshment may take some time to init
+                assertTrue(i < 10);
+                Thread.sleep(150);
+                if (x2 == beanProxy.count()) {
+                    i++;
+                    continue;
+                } else {
+                    break;
+                }
+            }
         }
         {
             int x1 = beanProxy.count(1, 2);
@@ -458,8 +468,8 @@ public class ProxyUtilTest {
     }
 
     public class C10 implements I10 {
-        int count1;
-        int count2;
+        AtomicInteger count1 = new AtomicInteger(0);
+        AtomicInteger count2 = new AtomicInteger(0);;
 
         @Override
         public int count1(int p) {
@@ -468,7 +478,7 @@ public class ProxyUtilTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            return count1++;
+            return count1.incrementAndGet();
         }
 
         @Override
@@ -478,7 +488,7 @@ public class ProxyUtilTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            return count2++;
+            return count2.incrementAndGet();
         }
     }
 

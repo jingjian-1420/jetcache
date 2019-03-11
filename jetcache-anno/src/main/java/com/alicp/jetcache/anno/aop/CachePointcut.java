@@ -87,6 +87,9 @@ public class CachePointcut extends StaticMethodMatcherPointcut implements ClassF
         if (name.indexOf("$$EnhancerBySpringCGLIB$$") >= 0) {
             return true;
         }
+        if (name.indexOf("$$FastClassBySpringCGLIB$$") >= 0) {
+            return true;
+        }
         return false;
     }
 
@@ -112,6 +115,9 @@ public class CachePointcut extends StaticMethodMatcherPointcut implements ClassF
 
     private boolean matchesImpl(Method method, Class targetClass) {
         if (!matchesThis(method.getDeclaringClass())) {
+            return false;
+        }
+        if (exclude(targetClass.getName())) {
             return false;
         }
         String key = getKey(method, targetClass);

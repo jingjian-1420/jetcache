@@ -19,8 +19,6 @@ import com.alicp.jetcache.support.DefaultCacheMonitorManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -42,7 +40,8 @@ public class CacheContext {
     private GlobalCacheConfig globalCacheConfig;
 
     private DefaultCacheMonitorManager defaultCacheMonitorManager;
-    private ConcurrentHashMap<String, Cache> cacheManager;
+    private SimpleCacheManager cacheManager = SimpleCacheManager.defaultManager;
+    private boolean inited;
 
     public CacheContext(GlobalCacheConfig globalCacheConfig) {
         this.globalCacheConfig = globalCacheConfig;
@@ -50,24 +49,29 @@ public class CacheContext {
     }
 
     public synchronized void init() {
-        if (cacheManager == null) {
-            this.cacheManager = new ConcurrentHashMap<>();
+        if (!inited) {
             if (globalCacheConfig.getStatIntervalMinutes() > 0) {
                 defaultCacheMonitorManager = new DefaultCacheMonitorManager(globalCacheConfig.getStatIntervalMinutes(),
                         TimeUnit.MINUTES, globalCacheConfig.getConfigProvider().statCallback());
                 defaultCacheMonitorManager.start();
             }
+            inited = true;
         }
     }
 
     public synchronized void shutdown() {
-        if (defaultCacheMonitorManager != null) {
-            defaultCacheMonitorManager.stop();
+        if (inited) {
+            if (defaultCacheMonitorManager != null) {
+                defaultCacheMonitorManager.stop();
+            }
+            defaultCacheMonitorManager = null;
+            cacheManager.rebuild();
+            inited = false;
         }
-        ConcurrentHashMap<String, Cache> m = cacheManager;
-        cacheManager = null;
-        m.forEach((k, c) -> c.close());
-        defaultCacheMonitorManager = null;
+    }
+
+    public void setCacheManager(SimpleCacheManager cacheManager) {
+        this.cacheManager = cacheManager;
     }
 
     public CacheInvokeContext createCacheInvokeContext(ConfigMap configMap) {
@@ -108,12 +112,21 @@ public class CacheContext {
         return cache;
     }
 
+    public <K, V> Cache<K, V> getCache(String cacheName) {
+        return getCache(CacheConsts.DEFAULT_AREA, cacheName);
+    }
+
+    public <K, V> Cache<K, V> getCache(String area, String cacheName) {
+        Cache cache = cacheManager.getCache(area, cacheName);
+        return cache;
+    }
+
     public Cache __createOrGetCache(CachedAnnoConfig cachedAnnoConfig, String area, String cacheName) {
         String fullCacheName = area + "_" + cacheName;
-        Cache cache = cacheManager.get(fullCacheName);
+        Cache cache = cacheManager.getCache(area, cacheName);
         if (cache == null) {
             synchronized (this) {
-                cache = cacheManager.get(fullCacheName);
+                cache = cacheManager.getCache(area, cacheName);
                 if (cache == null) {
                     if (globalCacheConfig.isAreaInCacheName()) {
                         // for compatible reason, if we use default configuration, the prefix should same to that version <=2.4.3
@@ -121,7 +134,7 @@ public class CacheContext {
                     } else {
                         cache = buildCache(cachedAnnoConfig, area, cacheName);
                     }
-                    cacheManager.put(fullCacheName, cache);
+                    cacheManager.putCache(area, cacheName, cache);
                 }
             }
         }
@@ -151,14 +164,17 @@ public class CacheContext {
                     .expireAfterWrite(remote.config().getExpireAfterWriteInMillis(), TimeUnit.MILLISECONDS)
                     .addCache(local, remote)
                     .useExpireOfSubCache(useExpireOfSubCache)
+                    .cacheNullValue(cachedAnnoConfig.isCacheNullValue())
                     .buildCache();
         }
         cache.config().setRefreshPolicy(cachedAnnoConfig.getRefreshPolicy());
         cache = new CacheHandler.CacheHandlerRefreshCache(cache);
 
         cache.config().setCachePenetrationProtect(globalCacheConfig.isPenetrationProtect());
-        if (cachedAnnoConfig.getPenetrationProtectConfig() != null) {
-            cache.config().setCachePenetrationProtect(cachedAnnoConfig.getPenetrationProtectConfig().isPenetrationProtect());
+        PenetrationProtectConfig protectConfig = cachedAnnoConfig.getPenetrationProtectConfig();
+        if (protectConfig != null) {
+            cache.config().setCachePenetrationProtect(protectConfig.isPenetrationProtect());
+            cache.config().setPenetrationProtectTimeout(protectConfig.getPenetrationProtectTimeout());
         }
 
 

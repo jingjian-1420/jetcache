@@ -4,6 +4,7 @@ import com.alicp.jetcache.CacheConfigException;
 import com.alicp.jetcache.anno.KeyConvertor;
 import com.alicp.jetcache.anno.SerialPolicy;
 import com.alicp.jetcache.support.*;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.URI;
 import java.util.HashMap;
@@ -17,6 +18,9 @@ import java.util.function.Function;
  * @author <a href="mailto:areyouok@gmail.com">huangli</a>
  */
 public class ConfigProvider {
+
+    @Autowired(required = false)
+    private SimpleCacheManager cacheManager;
 
     protected static Map<String, String> parseQueryParameters(String query) {
         Map<String, String> m = new HashMap<>();
@@ -97,10 +101,22 @@ public class ConfigProvider {
     }
 
     public CacheContext newContext(GlobalCacheConfig globalCacheConfig) {
-        return new CacheContext(globalCacheConfig);
+        CacheContext c = new CacheContext(globalCacheConfig);
+        if (getCacheManager() != null) {
+            c.setCacheManager(getCacheManager());
+        }
+        return c;
     }
 
     public Consumer<StatInfo> statCallback() {
         return new StatInfoLogger(false);
+    }
+
+    public void setCacheManager(SimpleCacheManager cacheManager) {
+        this.cacheManager = cacheManager;
+    }
+
+    public SimpleCacheManager getCacheManager() {
+        return cacheManager;
     }
 }
